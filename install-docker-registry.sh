@@ -16,22 +16,21 @@ REGISTRY_AUTH_DIR=${REGISTRY_AUTH_DIR:-"$SCRIPT_DIR/docker-registry/auth"}
 
 usage() {
     cat <<'EOF'
-Usage: ./install-docker-registry.sh [options]
+用法：./install-docker-registry.sh [选项]
 
-Download and start an authenticated Docker Registry.
+下载并启动一个启用密码认证的 Docker Registry。
 
-Options:
-  -u, --username USER   Login username (default: registry)
-      --bind ADDRESS    Listen address (default: 127.0.0.1)
-      --port PORT       Listen port (default: 5000)
-      --name NAME       Container name (default: docker-registry)
-  -h, --help            Show this help
+选项：
+  -u, --username 用户名   登录用户名（默认：registry）
+      --bind 地址         监听地址（默认：127.0.0.1）
+      --port 端口         监听端口（默认：5000）
+      --name 名称         容器名称（默认：docker-registry）
+  -h, --help             显示此帮助信息
 
-The password is read silently from the terminal. For non-interactive use,
-set REGISTRY_PASSWORD in the environment. Other settings can also be
-overridden with the environment variables shown in the script header.
+脚本会从终端静默读取密码。非交互运行时，请设置 REGISTRY_PASSWORD
+环境变量。其他配置也可以通过脚本开头所列的同名环境变量覆盖。
 
-Examples:
+示例：
   ./install-docker-registry.sh -u admin
   REGISTRY_PASSWORD='change-me' ./install-docker-registry.sh
   REGISTRY_BIND=0.0.0.0 REGISTRY_PORT=5000 ./install-docker-registry.sh
@@ -39,7 +38,7 @@ EOF
 }
 
 die() {
-    printf 'Error: %s\n' "$*" >&2
+    printf '错误：%s\n' "$*" >&2
     exit 1
 }
 
@@ -47,22 +46,22 @@ die() {
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -u|--username)
-            [ "$#" -ge 2 ] || die "$1 requires a value"
+            [ "$#" -ge 2 ] || die "$1 需要提供一个值"
             REGISTRY_USER=$2
             shift 2
             ;;
         --bind)
-            [ "$#" -ge 2 ] || die "$1 requires a value"
+            [ "$#" -ge 2 ] || die "$1 需要提供一个值"
             REGISTRY_BIND=$2
             shift 2
             ;;
         --port)
-            [ "$#" -ge 2 ] || die "$1 requires a value"
+            [ "$#" -ge 2 ] || die "$1 需要提供一个值"
             REGISTRY_PORT=$2
             shift 2
             ;;
         --name)
-            [ "$#" -ge 2 ] || die "$1 requires a value"
+            [ "$#" -ge 2 ] || die "$1 需要提供一个值"
             REGISTRY_CONTAINER=$2
             shift 2
             ;;
@@ -71,42 +70,42 @@ while [ "$#" -gt 0 ]; do
             exit 0
             ;;
         *)
-            die "unknown option: $1 (use --help for usage)"
+            die "未知选项：$1（使用 --help 查看用法）"
             ;;
     esac
 done
 
-command -v docker >/dev/null 2>&1 || die "docker is not installed or is not in PATH"
-docker info >/dev/null 2>&1 || die "the Docker daemon is not running or is not accessible"
+command -v docker >/dev/null 2>&1 || die "未安装 Docker，或者 docker 不在 PATH 中"
+docker info >/dev/null 2>&1 || die "Docker 服务未运行或当前用户无权访问"
 
-[ -n "$REGISTRY_BIND" ] || die "bind address cannot be empty"
-[ -n "$REGISTRY_CONTAINER" ] || die "container name cannot be empty"
+[ -n "$REGISTRY_BIND" ] || die "监听地址不能为空"
+[ -n "$REGISTRY_CONTAINER" ] || die "容器名称不能为空"
 
 # 只允许替换由本脚本创建的同名容器，避免误删用户已有容器。
 replace_existing=false
 if docker container inspect "$REGISTRY_CONTAINER" >/dev/null 2>&1; then
     managed=$(docker inspect --format '{{ index .Config.Labels "io.codex.registry-script" }}' "$REGISTRY_CONTAINER" 2>/dev/null || true)
-    [ "$managed" = "true" ] || die "container '$REGISTRY_CONTAINER' already exists and was not created by this script"
+    [ "$managed" = "true" ] || die "容器 '$REGISTRY_CONTAINER' 已存在，且不是由本脚本创建的"
     replace_existing=true
 fi
 
 case "$REGISTRY_USER" in
     ''|*[!A-Za-z0-9_.@-]*)
-        die "username may contain only letters, numbers, '.', '_', '@', and '-'"
+        die "用户名只能包含字母、数字、'.'、'_'、'@' 和 '-'"
         ;;
 esac
 
 case "$REGISTRY_PORT" in
-    ''|*[!0-9]*) die "port must be a number" ;;
-    ??????*) die "port must be between 1 and 65535" ;;
+    ''|*[!0-9]*) die "端口必须是数字" ;;
+    ??????*) die "端口必须在 1 到 65535 之间" ;;
 esac
 
 if [ "$REGISTRY_PORT" -lt 1 ] 2>/dev/null || [ "$REGISTRY_PORT" -gt 65535 ] 2>/dev/null; then
-    die "port must be between 1 and 65535"
+    die "端口必须在 1 到 65535 之间"
 fi
 
 if [ -z "${REGISTRY_PASSWORD:-}" ]; then
-    [ -t 0 ] || die "set REGISTRY_PASSWORD when running non-interactively"
+    [ -t 0 ] || die "非交互运行时请设置 REGISTRY_PASSWORD"
 
     # 关闭终端回显读取密码，并确保脚本被中断时恢复回显。
     old_stty=$(stty -g)
@@ -122,24 +121,24 @@ if [ -z "${REGISTRY_PASSWORD:-}" ]; then
     trap 'restore_tty' EXIT
     trap 'abort_prompt' HUP INT TERM
 
-    printf 'Registry password: ' >&2
+    printf '请输入 Registry 密码：' >&2
     stty -echo
     IFS= read -r REGISTRY_PASSWORD
     restore_tty
     printf '\n' >&2
 
-    printf 'Confirm password: ' >&2
+    printf '请再次输入密码：' >&2
     stty -echo
     IFS= read -r password_confirmation
     restore_tty
     printf '\n' >&2
     trap - EXIT HUP INT TERM
 
-    [ "$REGISTRY_PASSWORD" = "$password_confirmation" ] || die "passwords do not match"
+    [ "$REGISTRY_PASSWORD" = "$password_confirmation" ] || die "两次输入的密码不一致"
     unset password_confirmation
 fi
 
-[ -n "$REGISTRY_PASSWORD" ] || die "password cannot be empty"
+[ -n "$REGISTRY_PASSWORD" ] || die "密码不能为空"
 
 # Registry 数据和认证文件保存在脚本目录中，重新创建容器后仍会保留。
 umask 077
@@ -148,25 +147,25 @@ auth_file="$REGISTRY_AUTH_DIR/htpasswd"
 auth_tmp=$(mktemp "$REGISTRY_AUTH_DIR/.htpasswd.XXXXXX")
 trap 'rm -f "$auth_tmp"' EXIT HUP INT TERM
 
-printf 'Pulling %s and %s...\n' "$REGISTRY_IMAGE" "$HTPASSWD_IMAGE"
+printf '正在拉取 %s 和 %s...\n' "$REGISTRY_IMAGE" "$HTPASSWD_IMAGE"
 docker pull "$REGISTRY_IMAGE"
 docker pull "$HTPASSWD_IMAGE"
 
 # 使用 bcrypt 算法生成 Registry 所需的 htpasswd 文件。
 printf '%s\n' "$REGISTRY_PASSWORD" |
     docker run --rm -i --entrypoint htpasswd "$HTPASSWD_IMAGE" -Bni "$REGISTRY_USER" >"$auth_tmp"
-[ -s "$auth_tmp" ] || die "failed to generate the htpasswd file"
+[ -s "$auth_tmp" ] || die "无法生成 htpasswd 文件"
 chmod 600 "$auth_tmp"
 mv "$auth_tmp" "$auth_file"
 trap - EXIT HUP INT TERM
 
 if [ "$replace_existing" = "true" ]; then
-    printf 'Replacing existing container %s...\n' "$REGISTRY_CONTAINER"
+    printf '正在替换已有容器 %s...\n' "$REGISTRY_CONTAINER"
     docker rm -f "$REGISTRY_CONTAINER" >/dev/null
 fi
 
 # 启动开启 htpasswd 认证的官方 Registry 容器。
-printf 'Starting Registry on %s:%s...\n' "$REGISTRY_BIND" "$REGISTRY_PORT"
+printf '正在启动 Registry，监听地址为 %s:%s...\n' "$REGISTRY_BIND" "$REGISTRY_PORT"
 docker run -d \
     --name "$REGISTRY_CONTAINER" \
     --label io.codex.registry-script=true \
@@ -186,7 +185,7 @@ sleep 1
 running=$(docker inspect --format '{{.State.Running}}' "$REGISTRY_CONTAINER" 2>/dev/null || true)
 if [ "$running" != "true" ]; then
     docker logs "$REGISTRY_CONTAINER" >&2 2>/dev/null || true
-    die "Registry container failed to stay running"
+    die "Registry 容器启动后意外退出"
 fi
 
 login_host=$REGISTRY_BIND
@@ -194,11 +193,11 @@ case "$login_host" in
     0.0.0.0|'::'|'[::]') login_host=REGISTRY_HOST ;;
 esac
 
-printf '\nRegistry is running. Log in with:\n'
+printf '\nRegistry 已启动。登录命令：\n'
 printf '  docker login %s:%s -u %s\n' "$login_host" "$REGISTRY_PORT" "$REGISTRY_USER"
-printf '\nData directory: %s\n' "$REGISTRY_DATA_DIR"
-printf 'Stop command:   docker stop %s\n' "$REGISTRY_CONTAINER"
+printf '\n数据目录：%s\n' "$REGISTRY_DATA_DIR"
+printf '停止命令：docker stop %s\n' "$REGISTRY_CONTAINER"
 
 if [ "$REGISTRY_BIND" != "127.0.0.1" ] && [ "$REGISTRY_BIND" != "localhost" ] && [ "$REGISTRY_BIND" != "::1" ]; then
-    printf '\nWarning: this Registry uses HTTP. Configure TLS before exposing it to a network.\n' >&2
+    printf '\n警告：当前 Registry 使用 HTTP。暴露到网络前请先配置 TLS。\n' >&2
 fi
