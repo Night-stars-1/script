@@ -5,7 +5,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 
 # 以下配置均可通过同名环境变量覆盖。
-REGISTRY_USER=${REGISTRY_USER:-registry}
+REGISTRY_USER=${REGISTRY_USER:-admin}
 REGISTRY_PORT=${REGISTRY_PORT:-5000}
 REGISTRY_BIND=${REGISTRY_BIND:-127.0.0.1}
 REGISTRY_CONTAINER=${REGISTRY_CONTAINER:-docker-registry}
@@ -21,7 +21,7 @@ usage() {
 下载并启动一个启用密码认证的 Docker Registry。
 
 选项：
-  -u, --username 用户名   登录用户名（默认：registry）
+  -u, --username 用户名   登录用户名（默认：admin）
       --bind 地址         监听地址（默认：127.0.0.1）
       --port 端口         监听端口（默认：5000）
       --name 名称         容器名称（默认：docker-registry）
@@ -145,7 +145,17 @@ umask 077
 mkdir -p "$REGISTRY_DATA_DIR" "$REGISTRY_AUTH_DIR"
 auth_file="$REGISTRY_AUTH_DIR/htpasswd"
 auth_tmp=$(mktemp "$REGISTRY_AUTH_DIR/.htpasswd.XXXXXX")
-trap 'rm -f "$auth_tmp"' EXIT HUP INT TERM
+htpasswd_container="${REGISTRY_CONTAINER}-htpasswd-$$"
+
+# 密码生成使用临时容器；无论成功、失败还是中断，都清理容器和临时文件。
+cleanup_htpasswd() {
+    rm -f "$auth_tmp"
+    managed=$(docker inspect --format '{{ index .Config.Labels "io.codex.registry-htpasswd" }}' "$htpasswd_container" 2>/dev/null || true)
+    if [ "$managed" = "true" ]; then
+        docker rm -f "$htpasswd_container" >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_htpasswd EXIT HUP INT TERM
 
 printf '正在拉取 %s 和 %s...\n' "$REGISTRY_IMAGE" "$HTPASSWD_IMAGE"
 docker pull "$REGISTRY_IMAGE"
@@ -153,8 +163,12 @@ docker pull "$HTPASSWD_IMAGE"
 
 # 使用 bcrypt 算法生成 Registry 所需的 htpasswd 文件。
 printf '%s\n' "$REGISTRY_PASSWORD" |
-    docker run --rm -i --entrypoint htpasswd "$HTPASSWD_IMAGE" -Bni "$REGISTRY_USER" >"$auth_tmp"
+    docker run --name "$htpasswd_container" \
+        --label io.codex.registry-htpasswd=true \
+        -i --entrypoint htpasswd "$HTPASSWD_IMAGE" -Bni "$REGISTRY_USER" >"$auth_tmp"
 [ -s "$auth_tmp" ] || die "无法生成 htpasswd 文件"
+docker rm -f "$htpasswd_container" >/dev/null 2>&1 || true
+htpasswd_container=
 chmod 600 "$auth_tmp"
 mv "$auth_tmp" "$auth_file"
 trap - EXIT HUP INT TERM
@@ -178,8 +192,6 @@ docker run -d \
     -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
     "$REGISTRY_IMAGE" >/dev/null
 
-unset REGISTRY_PASSWORD
-
 # Docker 成功创建容器不代表服务一定能持续运行，因此检查一次容器状态。
 sleep 1
 running=$(docker inspect --format '{{.State.Running}}' "$REGISTRY_CONTAINER" 2>/dev/null || true)
@@ -195,8 +207,12 @@ esac
 
 printf '\nRegistry 已启动。登录命令：\n'
 printf '  docker login %s:%s -u %s\n' "$login_host" "$REGISTRY_PORT" "$REGISTRY_USER"
+printf '用户名：%s\n' "$REGISTRY_USER"
+printf '密码：%s\n' "$REGISTRY_PASSWORD"
 printf '\n数据目录：%s\n' "$REGISTRY_DATA_DIR"
 printf '停止命令：docker stop %s\n' "$REGISTRY_CONTAINER"
+
+unset REGISTRY_PASSWORD
 
 if [ "$REGISTRY_BIND" != "127.0.0.1" ] && [ "$REGISTRY_BIND" != "localhost" ] && [ "$REGISTRY_BIND" != "::1" ]; then
     printf '\n警告：当前 Registry 使用 HTTP。暴露到网络前请先配置 TLS。\n' >&2
