@@ -112,8 +112,8 @@ cmd_check() {
 
   # vxlan 是 UDP 无握手、10250 是入方向,本机都探不了,只列清单人工确认
   log "---- 请人工确认安全组放行(开放方 ← 来源) ----"
-  log "  主服务器 $MAIN_PUBLIC_IP:8472/udp  ← $NODE_PUBLIC_IP"
-  log "  本机 $NODE_PUBLIC_IP:8472/udp  ← $MAIN_PUBLIC_IP"
+  log "  主服务器 $MAIN_PUBLIC_IP:51820/udp  ← $NODE_PUBLIC_IP"
+  log "  本机 $NODE_PUBLIC_IP:51820/udp  ← $MAIN_PUBLIC_IP"
   log "  本机 $NODE_PUBLIC_IP:10250/tcp ← $MAIN_PUBLIC_IP"
 
   if ((FAILED)); then
