@@ -114,10 +114,30 @@ if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
   curl -fsSL https://get.acme.sh | sh
 fi
 "$ACME_HOME/acme.sh" --set-default-ca --server letsencrypt
-"$ACME_HOME/acme.sh" --issue -d "$DOMAIN" --standalone
+ACME_CERT_SOURCE=""
+ACME_INSTALL_ARGS=()
+for candidate in \
+  "$ACME_HOME/$DOMAIN/fullchain.cer" \
+  "$ACME_HOME/${DOMAIN}_ecc/fullchain.cer"; do
+  if [[ -s "$candidate" ]] && openssl x509 -in "$candidate" -noout -checkend 2592000 >/dev/null 2>&1; then
+    ACME_CERT_SOURCE="$candidate"
+    [[ "$candidate" == *"_ecc/"* ]] && ACME_INSTALL_ARGS+=(--ecc)
+    break
+  fi
+done
+
+if [[ -n "$ACME_CERT_SOURCE" ]]; then
+  CERT_EXPIRES="$(openssl x509 -in "$ACME_CERT_SOURCE" -noout -enddate | cut -d= -f2-)"
+  ok "检测到有效证书，跳过签发，有效期至: $CERT_EXPIRES"
+else
+  log '未检测到有效期超过 30 天的证书，开始申请或续期'
+  "$ACME_HOME/acme.sh" --issue -d "$DOMAIN" --standalone --keylength ec-256
+  ACME_INSTALL_ARGS=(--ecc)
+fi
 
 mkdir -p "$CERT_DIR"
 "$ACME_HOME/acme.sh" --install-cert -d "$DOMAIN" \
+  "${ACME_INSTALL_ARGS[@]}" \
   --fullchain-file "$CERT_DIR/$DOMAIN.cer" \
   --key-file "$CERT_DIR/$DOMAIN.cer.key" \
   --reloadcmd 'marzban restart -n'
