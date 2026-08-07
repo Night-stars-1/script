@@ -92,6 +92,9 @@ log '安装 Marzban'
 if ! command -v marzban >/dev/null; then
   MARZBAN_INSTALLER="$(mktemp)"
   curl -fsSL https://github.com/Gozargah/Marzban-scripts/raw/master/marzban.sh -o "$MARZBAN_INSTALLER"
+  grep -Eq '^[[:space:]]*follow_marzban_logs[[:space:]]*$' "$MARZBAN_INSTALLER" \
+    || die 'Marzban 官方安装脚本格式已变化，未找到日志跟随调用，已停止以避免错误执行'
+  sed -i 's/^[[:space:]]*follow_marzban_logs[[:space:]]*$/    :/' "$MARZBAN_INSTALLER"
   bash "$MARZBAN_INSTALLER" install
   rm -f "$MARZBAN_INSTALLER"
 fi
