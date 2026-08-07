@@ -120,7 +120,7 @@ mkdir -p "$CERT_DIR"
 "$ACME_HOME/acme.sh" --install-cert -d "$DOMAIN" \
   --fullchain-file "$CERT_DIR/$DOMAIN.cer" \
   --key-file "$CERT_DIR/$DOMAIN.cer.key" \
-  --reloadcmd 'marzban restart'
+  --reloadcmd 'marzban restart -n'
 chmod 644 "$CERT_DIR/$DOMAIN.cer"
 chmod 600 "$CERT_DIR/$DOMAIN.cer.key"
 [[ -s "$CERT_DIR/$DOMAIN.cer" && -s "$CERT_DIR/$DOMAIN.cer.key" ]] || die '证书文件安装失败'
@@ -140,7 +140,7 @@ set_env XRAY_SUBSCRIPTION_URL_PREFIX "https://$DOMAIN:$PANEL_PORT"
 set_env CUSTOM_TEMPLATES_DIRECTORY "$TEMPLATE_DIR/"
 set_env SUBSCRIPTION_PAGE_TEMPLATE "subscription/index.html"
 set_env CLASH_SUBSCRIPTION_TEMPLATE "clash/my-custom-template.yml"
-marzban restart
+marzban restart -n
 ok 'Marzban 已重启'
 
 log '检查部署状态'
