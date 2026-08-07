@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 DOMAIN=""
+ADMIN_PASSWORD="${1:-}"
 PANEL_PORT="${PANEL_PORT:-8000}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 MARZBAN_DIR="/opt/marzban"
@@ -19,6 +20,7 @@ ok() { printf '\033[1;32m[marzban][OK]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[marzban][WARN]\033[0m %s\n' "$*"; }
 
 [[ "$(id -u)" == 0 ]] || die '请使用 root 执行: sudo -i'
+[[ -n "$ADMIN_PASSWORD" ]] || die '请将 admin 管理员密码作为脚本第一个参数传入'
 [[ -r /dev/tty ]] || die '需要交互终端来输入域名'
 read -r -p $'请输入面板域名: ' DOMAIN </dev/tty
 [[ -n "$DOMAIN" ]] || die '域名不能为空'
@@ -188,9 +190,25 @@ else
   warn "本机面板正常，但无法通过公网域名访问，请检查安全组和 TCP $PANEL_PORT"
 fi
 
+log '配置管理员'
+if marzban cli admin list --username admin --limit 1 </dev/tty 2>/dev/null \
+  | sed -E $'s/\033\\[[0-9;]*[mK]//g' \
+  | grep -Eq '(^|[^[:alnum:]_])admin([^[:alnum:]_]|$)'; then
+  warn '管理员 admin 已存在，跳过创建，参数中的密码不会覆盖现有密码'
+else
+  marzban cli admin create \
+    --username admin \
+    --password "$ADMIN_PASSWORD" \
+    --sudo \
+    --telegram-id 0 \
+    --discord-webhook 0 </dev/tty
+  ok '管理员 admin 创建成功'
+fi
+unset ADMIN_PASSWORD
+
 log '完成'
 printf '面板: https://%s:%s\n' "$DOMAIN" "$PANEL_PORT"
-printf '创建管理员: marzban cli admin create --sudo\n'
+printf '管理员: admin\n'
 printf '查看日志: marzban logs\n'
 printf '证书目录: %s\n' "$CERT_DIR"
 printf '订阅页模板: %s\n' "$TEMPLATE_DEST"
