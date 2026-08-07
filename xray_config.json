@@ -1,0 +1,103 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "routing": {
+    "rules": [
+      {
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "BLOCK",
+        "type": "field"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "Shadowsocks TCP",
+      "listen": "0.0.0.0",
+      "port": 1083,
+      "protocol": "shadowsocks",
+      "settings": {
+        "clients": [],
+        "network": "tcp,udp"
+      }
+    },
+    {
+      "tag": "VMESS TCP TLS",
+      "listen": "0.0.0.0",
+      "port": 1084,
+      "protocol": "vmess",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "__MARZBAN_DOMAIN__",
+          "certificates": [
+            {
+              "ocspStapling": 3600,
+              "certificateFile": "/var/lib/marzban/certs/__MARZBAN_DOMAIN__.cer",
+              "keyFile": "/var/lib/marzban/certs/__MARZBAN_DOMAIN__.cer.key"
+            }
+          ],
+          "minVersion": "1.2"
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      }
+    },
+    {
+      "tag": "VLESS TCP TLS",
+      "listen": "0.0.0.0",
+      "port": 1085,
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "__MARZBAN_DOMAIN__",
+          "certificates": [
+            {
+              "ocspStapling": 3600,
+              "certificateFile": "/var/lib/marzban/certs/__MARZBAN_DOMAIN__.cer",
+              "keyFile": "/var/lib/marzban/certs/__MARZBAN_DOMAIN__.cer.key"
+            }
+          ],
+          "minVersion": "1.2"
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "DIRECT"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "BLOCK"
+    }
+  ]
+}

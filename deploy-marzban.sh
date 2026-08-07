@@ -9,9 +9,11 @@ MARZBAN_DIR="/opt/marzban"
 CERT_DIR="/var/lib/marzban/certs"
 TEMPLATE_URL="https://raw.githubusercontent.com/Night-stars-1/script/main/marzban.html"
 CLASH_TEMPLATE_URL="https://raw.githubusercontent.com/Night-stars-1/script/main/marzban-clash.yml"
+XRAY_TEMPLATE_URL="https://raw.githubusercontent.com/Night-stars-1/script/main/xray_config.json"
 TEMPLATE_DIR="/var/lib/marzban/templates"
 TEMPLATE_DEST="$TEMPLATE_DIR/subscription/index.html"
 CLASH_TEMPLATE_DEST="$TEMPLATE_DIR/clash/my-custom-template.yml"
+XRAY_CONFIG_DEST="/var/lib/marzban/xray_config.json"
 ACME_HOME="/root/.acme.sh"
 
 die() { printf '\033[1;31m[marzban][ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -71,6 +73,27 @@ download_template() {
   ok "模板已安装: $destination"
 }
 
+install_xray_config() {
+  local tmp rendered
+  tmp="$(mktemp)"
+  rendered="$(mktemp)"
+  if ! curl -fsSL "$XRAY_TEMPLATE_URL" -o "$tmp"; then
+    rm -f "$tmp" "$rendered"
+    die "Xray 核心配置下载失败: $XRAY_TEMPLATE_URL"
+  fi
+  jq empty "$tmp" >/dev/null 2>&1 || {
+    rm -f "$tmp" "$rendered"
+    die 'Xray 核心配置不是有效 JSON'
+  }
+  jq --arg domain "$DOMAIN" \
+    'walk(if type == "string" then gsub("__MARZBAN_DOMAIN__"; $domain) else . end)' \
+    "$tmp" >"$rendered"
+  install -m 644 "$rendered" "$XRAY_CONFIG_DEST"
+  rm -f "$tmp" "$rendered"
+  jq empty "$XRAY_CONFIG_DEST" >/dev/null 2>&1 || die '生成后的 Xray 核心配置不是有效 JSON'
+  ok "Xray 核心配置已安装: $XRAY_CONFIG_DEST"
+}
+
 log '准备 Swap'
 if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
   if [[ ! -f /swapfile ]]; then
@@ -93,7 +116,7 @@ export NEEDRESTART_MODE=a
 export APT_LISTCHANGES_FRONTEND=none
 apt-get install -y \
   -o Dpkg::Options::=--force-confold \
-  curl ca-certificates socat openssl dnsutils
+  curl ca-certificates socat openssl dnsutils jq
 ok '依赖安装完成'
 
 log '安装 Marzban'
@@ -159,12 +182,14 @@ log '写入 Marzban HTTPS 配置'
 [[ -f "$MARZBAN_DIR/.env" ]] || die "$MARZBAN_DIR/.env 不存在"
 download_template "$TEMPLATE_URL" "$TEMPLATE_DEST"
 download_template "$CLASH_TEMPLATE_URL" "$CLASH_TEMPLATE_DEST"
+install_xray_config
 cp -a "$MARZBAN_DIR/.env" "$MARZBAN_DIR/.env.bak.$(date +%Y%m%d%H%M%S)"
 set_env UVICORN_HOST 0.0.0.0
 set_env UVICORN_PORT "$PANEL_PORT"
 set_env UVICORN_SSL_CERTFILE "$CERT_DIR/$DOMAIN.cer"
 set_env UVICORN_SSL_KEYFILE "$CERT_DIR/$DOMAIN.cer.key"
 set_env XRAY_SUBSCRIPTION_URL_PREFIX "https://$DOMAIN:$PANEL_PORT"
+set_env XRAY_JSON "$XRAY_CONFIG_DEST"
 set_env CUSTOM_TEMPLATES_DIRECTORY "$TEMPLATE_DIR/"
 set_env SUBSCRIPTION_PAGE_TEMPLATE "subscription/index.html"
 set_env CLASH_SUBSCRIPTION_TEMPLATE "clash/my-custom-template.yml"
@@ -219,3 +244,4 @@ printf '查看日志: marzban logs\n'
 printf '证书目录: %s\n' "$CERT_DIR"
 printf '订阅页模板: %s\n' "$TEMPLATE_DEST"
 printf 'Clash 模板: %s\n' "$CLASH_TEMPLATE_DEST"
+printf 'Xray 配置: %s\n' "$XRAY_CONFIG_DEST"
