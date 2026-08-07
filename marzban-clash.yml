@@ -1,0 +1,54 @@
+mode: rule
+port: 7890
+
+{{ conf | except("proxy-groups", "port", "mode") | yaml }}
+
+geodata-mode: true
+geo-auto-update: true
+geo-update-interval: 24
+
+geox-url:
+  geoip: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat'
+  geosite: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat'
+  mmdb: 'https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/country.mmdb'
+
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 'https://dns.alidns.com/dns-query'
+    - 'https://doh.pub/dns-query'
+  fallback:
+    - 'https://1.1.1.1/dns-query'
+    - 'https://dns.google/dns-query'
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+
+proxy-groups:
+- name: '节点选择'
+  type: 'select'
+  proxies:
+  - '♻️ 自动选择'
+  - 'DIRECT'
+  {{ proxy_remarks | yaml | indent(2) }}
+- name: '♻️ 自动选择'
+  type: 'url-test'
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+  tolerance: 50
+  proxies:
+  {{ proxy_remarks | yaml | indent(2) }}
+{{ conf.get("proxy-groups", []) | yaml }}
+
+rules:
+  - 'DOMAIN-SUFFIX,local,DIRECT'
+  - 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
+  - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
+  - 'GEOSITE,CN,DIRECT'
+  - 'GEOIP,CN,DIRECT,no-resolve'
+  - 'MATCH,节点选择'

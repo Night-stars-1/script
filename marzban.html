@@ -3195,13 +3195,15 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
         }
 
         function setHrefs() {
+            const encodedUrl = encodeURIComponent(fullUrl);
             document.getElementById("ios-streisand").href = `streisand://import/${fullUrl}`;
             document.getElementById("ios-v2box").href = `v2box://install-sub?url=${fullUrl}&name=Sub`
             document.getElementById("android-v2rayng").href = `v2rayng://install-config?url=${fullUrl}`;
             document.getElementById("ios-singbox").href = `sing-box://import-remote-profile?url=${fullUrl}#Sub`;
             document.getElementById("android-singbox").href = `sing-box://import-remote-profile?url=${fullUrl}#Sub`;
             document.getElementById("android-nekobox").href = `sn://subscription?url=${fullUrl}&name=Sub`;
-            document.getElementById("windows-clashverge").href = `clash://install-config?url=${fullUrl}`
+            document.getElementById("android-clash").href = `clash://install-config?url=${encodedUrl}`;
+            document.getElementById("windows-clashverge").href = `clash://install-config?url=${encodedUrl}`
 
 
             // Android Apps
@@ -5438,6 +5440,101 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
                                                                                 alt="v2rayNG Step 2">
                                                                         </div>
                                                                     </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    class="text-white bg-gradient-to-r from-cyan-500 via-cyan-600 to-cyan-700 focus:ring-4 focus:outline-none focus:ring-teal-300 transition-all duration-300 font-medium rounded-2xl">
+                                                    <div x-data="{ expanded: false }">
+                                                        <h2>
+                                                            <button style="direction: ltr;" id="android-clash-title"
+                                                                type="button"
+                                                                class="flex items-center p-4 justify-between w-full text-left font-semibold"
+                                                                @click="expanded = !expanded" :aria-expanded="expanded"
+                                                                aria-controls="android-clash-content">
+                                                                <div
+                                                                    class="flex items-center justify-start gap-x-2 text-lg sm:text-xl font-medium">
+                                                                    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none"
+                                                                        xmlns="http://www.w3.org/2000/svg">
+                                                                        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13Z"
+                                                                            stroke="currentColor" stroke-width="1.5" />
+                                                                        <path d="M8 7h8M8 11h8M8 15h5" stroke="currentColor"
+                                                                            stroke-width="1.5" stroke-linecap="round" />
+                                                                    </svg>
+                                                                    <span x-text="$t('addClash')"></span>
+                                                                </div>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                                                                    viewBox="0 0 24 24" stroke-width="1.5"
+                                                                    stroke="currentColor"
+                                                                    :class="{'!rotate-180': expanded}"
+                                                                    class="w-6 h-6 mx-6 transform origin-center transition duration-200 ease-out">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                                        d="m4.5 8.25 7.5 7.5 7.5-7.5" />
+                                                                </svg>
+                                                            </button>
+                                                        </h2>
+                                                        <div id="android-clash-content" role="region"
+                                                            aria-labelledby="android-clash-title"
+                                                            class="grid text-sm text-white overflow-hidden transition-all duration-300 ease-in-out"
+                                                            :class="expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'">
+                                                                                                                        <div class="overflow-hidden">
+                                                                                                                            <div class="p-4 pb-6">
+                                                                                                                                <div
+                                                                                                                                    class="flex items-center rtl:mr-[-10px] ltr:ml-[-10px] md:rtl:mr-[-20px] md:ltr:ml-[-20px]">
+                                                                                                                                    <lord-icon
+                                                                                                                                        src="https://cdn.lordicon.com/mtdulhdc.json"
+                                                                                                                                        trigger="hover"
+                                                                                                                                        colors="primary:#fff,secondary:#fff"
+                                                                                                                                        class="w-12 h-12 md:w-20 md:h-20 ">
+                                                                                                                                    </lord-icon>
+                                                                                                                                    <h3 x-text="$t('downloadApp')"
+                                                                                                                                        class="text-xl font-black leading-none tracking-tight text-white md:text-2xl">
+                                                                                                                                    </h3>
+                                                                                                                                </div>
+                                                                                                                                <p x-text="$t('clickForDownload')"
+                                                                                                                                    class="text-sm mb-4 font-normal text-white lg:text-base"></p>
+                                                                                                                                <a href="https://github.com/chen08209/FlClash/releases/download/v0.8.94/FlClash-0.8.94-android-arm64-v8a.apk"
+                                                                                                                                    class="flex mb-4 items-center gap-x-4 w-full bg-gray-800 shadow-md px-3 py-2 rounded-3xl justify-between">
+                                                                                                                                    <lord-icon class="w-8 h-8"
+                                                                                                                                        src="https://cdn.lordicon.com/albqovim.json"
+                                                                                                                                        trigger="loop" delay="1500"
+                                                                                                                                        colors="primary:#fff" state="intro">
+                                                                                                                                    </lord-icon>
+                                                                                                                                    <span>下载 FlClash</span>
+                                                                                                                                    <lord-icon class="w-8 h-8"
+                                                                                                                                        src="https://cdn.lordicon.com/albqovim.json"
+                                                                                                                                        trigger="loop" delay="1500"
+                                                                                                                                        colors="primary:#fff" state="intro">
+                                                                                                                                    </lord-icon>
+                                                                                                                                </a>
+                                                                                                                                <div
+                                                                                                                                    class="flex items-center rtl:mr-[-10px] ltr:ml-[-10px] md:rtl:mr-[-20px] md:ltr:ml-[-20px]">
+                                                                                                                                    <lord-icon
+                                                                                                                                        src="https://cdn.lordicon.com/vcoyflbj.json"
+                                                                                                                                        trigger="hover"
+                                                                                                                                        colors="primary:#fff,secondary:#fff"
+                                                                                                                                        class="w-12 h-12 md:w-20 md:h-20 ">
+                                                                                                                                    </lord-icon>
+                                                                                                                                    <h3 x-text="$t('addConfigs')"
+                                                                                                                                        class="text-xl font-black leading-none tracking-tight text-white md:text-2xl">
+                                                                                                                                    </h3>
+                                                                                                                                </div>
+                                                                                                                               <p x-text="$t('clickForAdd')"
+                                                                        class="text-sm mb-4 font-normal text-white lg:text-base"></p>
+                                                                    <a id="android-clash"
+                                                                        class="flex mb-4 items-center gap-x-4 w-full bg-stone-800 shadow-md px-3 py-2 rounded-3xl justify-between">
+                                                                        <lord-icon class="w-8 h-8"
+                                                                            src="https://cdn.lordicon.com/mrdiiocb.json"
+                                                                            trigger="loop" delay="2000"
+                                                                            colors="primary:#fff"></lord-icon>
+                                                                        <span x-text="$t('AddtoApp')"></span>
+                                                                        <lord-icon class="w-8 h-8"
+                                                                            src="https://cdn.lordicon.com/mrdiiocb.json"
+                                                                            trigger="loop" delay="2000"
+                                                                            colors="primary:#fff"></lord-icon>
+                                                                    </a>
                                                                 </div>
                                                             </div>
                                                         </div>
