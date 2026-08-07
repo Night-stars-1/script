@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DOMAIN=""
 ADMIN_PASSWORD="${1:-}"
+DOMAIN="${2:-}"
 PANEL_PORT="${PANEL_PORT:-8000}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 MARZBAN_DIR="/opt/marzban"
@@ -20,9 +20,15 @@ ok() { printf '\033[1;32m[marzban][OK]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[marzban][WARN]\033[0m %s\n' "$*"; }
 
 [[ "$(id -u)" == 0 ]] || die '请使用 root 执行: sudo -i'
-[[ -n "$ADMIN_PASSWORD" ]] || die '请将 admin 管理员密码作为脚本第一个参数传入'
-[[ -r /dev/tty ]] || die '需要交互终端来输入域名'
-read -r -p $'请输入面板域名: ' DOMAIN </dev/tty
+[[ -r /dev/tty ]] || die '需要交互终端来输入缺少的域名或密码'
+if [[ -z "$ADMIN_PASSWORD" ]]; then
+  read -r -s -p $'请输入 admin 管理员密码: ' ADMIN_PASSWORD </dev/tty
+  printf '\n'
+fi
+[[ -n "$ADMIN_PASSWORD" ]] || die '管理员密码不能为空'
+if [[ -z "$DOMAIN" ]]; then
+  read -r -p $'请输入面板域名: ' DOMAIN </dev/tty
+fi
 [[ -n "$DOMAIN" ]] || die '域名不能为空'
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die '域名格式不正确'
 command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
