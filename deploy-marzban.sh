@@ -80,7 +80,12 @@ ok "Swap 已启用: $(swapon --show=SIZE --noheadings /swapfile 2>/dev/null | xa
 
 log '安装依赖'
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates socat openssl dnsutils
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export APT_LISTCHANGES_FRONTEND=none
+apt-get install -y \
+  -o Dpkg::Options::=--force-confold \
+  curl ca-certificates socat openssl dnsutils
 ok '依赖安装完成'
 
 log '安装 Marzban'
