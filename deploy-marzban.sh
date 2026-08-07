@@ -166,11 +166,27 @@ ok 'Marzban 已重启'
 log '检查部署状态'
 marzban status >/dev/null 2>&1 || die 'Marzban 状态检查失败，请运行: marzban logs'
 ok 'Marzban 状态正常'
-ss -lntp | grep -q ":$PANEL_PORT " || die "没有检测到面板端口 $PANEL_PORT 的监听"
-ok "面板端口监听中: $PANEL_PORT"
-curl -fsS --connect-timeout 10 --max-time 20 "https://$DOMAIN:$PANEL_PORT/" >/dev/null \
-  || die 'HTTPS 面板访问检查失败，请确认 DNS、端口和云服务商安全组'
-ok "HTTPS 面板可访问: https://$DOMAIN:$PANEL_PORT"
+PANEL_READY=false
+for _ in $(seq 1 30); do
+  if curl -fsS \
+    --noproxy '*' \
+    --resolve "$DOMAIN:$PANEL_PORT:127.0.0.1" \
+    --connect-timeout 2 \
+    --max-time 5 \
+    "https://$DOMAIN:$PANEL_PORT/" >/dev/null 2>&1; then
+    PANEL_READY=true
+    break
+  fi
+  sleep 2
+done
+[[ "$PANEL_READY" == true ]] || die 'Marzban 容器已运行，但 HTTPS 面板在 60 秒内未就绪，请运行: marzban logs'
+ok "HTTPS 面板已在本机端口 $PANEL_PORT 就绪"
+
+if curl -fsS --noproxy '*' --connect-timeout 10 --max-time 20 "https://$DOMAIN:$PANEL_PORT/" >/dev/null 2>&1; then
+  ok "HTTPS 面板可通过公网域名访问: https://$DOMAIN:$PANEL_PORT"
+else
+  warn "本机面板正常，但无法通过公网域名访问，请检查安全组和 TCP $PANEL_PORT"
+fi
 
 log '完成'
 printf '面板: https://%s:%s\n' "$DOMAIN" "$PANEL_PORT"
