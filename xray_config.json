@@ -59,7 +59,7 @@
     {
       "tag": "VLESS TCP TLS",
       "listen": "0.0.0.0",
-      "port": 1085,
+      "port": 2052,
       "protocol": "vless",
       "settings": {
         "clients": [],
