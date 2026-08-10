@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 ADMIN_PASSWORD="${1:-}"
 DOMAIN="${2:-}"
-PANEL_PORT="${PANEL_PORT:-8000}"
+PANEL_PORT="${PANEL_PORT:-8080}"
 SWAP_SIZE="${SWAP_SIZE:-2G}"
 MARZBAN_DIR="/opt/marzban"
 CERT_DIR="/var/lib/marzban/certs"
