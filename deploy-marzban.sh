@@ -47,9 +47,10 @@ usage() {
      deploy-marzban.sh 4 [节点目录名]
      Client Certificate 可用 NODE_CLIENT_CERT_FILE 指定 PEM 文件，否则交互粘贴
 
-  5  申请 TLS 证书（HTTP-01）
+  5  申请 TLS 证书（Cloudflare DNS-01）
      deploy-marzban.sh 5 [域名]
-     域名需解析到本机，证书安装到 /var/lib/marzban/certs/
+     证书安装到 /var/lib/marzban/certs/
+     不要求域名 A 记录指向本机；需 CF_Token（环境变量或交互输入）
 EOF
 }
 
@@ -303,24 +304,32 @@ ensure_acme() {
 issue_letsencrypt_cert() {
   local domain="$1"
   local reloadcmd="${2:-}"
+  local mode="${3:-standalone}"
   local candidate ACME_CERT_SOURCE="" CERT_EXPIRES
   local -a ACME_INSTALL_ARGS=()
   [[ -n "$domain" ]] || die 'TLS 证书域名不能为空'
   [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || die '域名格式不正确'
   command -v openssl >/dev/null || die '找不到 openssl'
-  command -v socat >/dev/null || die '找不到 socat，无法用 standalone 签证书'
+  if [[ "$mode" != dns_cf && "$mode" != standalone ]]; then
+    die "未知签证书方式: $mode"
+  fi
 
-  log '预检查 DNS'
-  DNS_IP="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-  DNS_IPV6="$(getent ahostsv6 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-  printf 'A 记录: %s\n' "${DNS_IP:-未找到}"
-  printf 'AAAA 记录: %s\n' "${DNS_IPV6:-未找到}"
-  [[ -n "$DNS_IP" ]] || die '没有查到域名 A 记录，请先将域名解析到本机公网 IPv4'
-  ok "A 记录已解析: $DNS_IP"
-
-  log '检查 80 端口'
-  if ss -lntH '( sport = :80 )' | grep -q .; then
-    die 'TCP 80 已被占用。standalone 签证书前请停止占用 80 的服务。'
+  if [[ "$mode" == standalone ]]; then
+    command -v socat >/dev/null || die '找不到 socat，无法用 HTTP-01 签证书'
+    log '预检查 DNS'
+    DNS_IP="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+    DNS_IPV6="$(getent ahostsv6 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+    printf 'A 记录: %s\n' "${DNS_IP:-未找到}"
+    printf 'AAAA 记录: %s\n' "${DNS_IPV6:-未找到}"
+    [[ -n "$DNS_IP" ]] || die '没有查到域名 A 记录，请先将域名解析到本机公网 IPv4'
+    ok "A 记录已解析: $DNS_IP"
+    log '检查 80 端口'
+    if ss -lntH '( sport = :80 )' | grep -q .; then
+      die 'TCP 80 已被占用。HTTP-01 签证书前请停止占用 80 的服务。'
+    fi
+  else
+    [[ -n "${CF_Token:-}" ]] || die 'Cloudflare DNS-01 需要 CF_Token'
+    log '使用 Cloudflare DNS-01，不要求域名 A 记录指向本机'
   fi
 
   ensure_acme
@@ -340,7 +349,11 @@ issue_letsencrypt_cert() {
     ok "检测到有效证书，跳过签发，有效期至: $CERT_EXPIRES"
   else
     log '未检测到有效期超过 30 天的证书，开始申请或续期'
-    "$ACME_HOME/acme.sh" --issue -d "$domain" --standalone --keylength ec-256
+    if [[ "$mode" == dns_cf ]]; then
+      "$ACME_HOME/acme.sh" --issue --dns dns_cf -d "$domain" --keylength ec-256
+    else
+      "$ACME_HOME/acme.sh" --issue -d "$domain" --standalone --keylength ec-256
+    fi
     ACME_INSTALL_ARGS=(--ecc)
   fi
 
@@ -365,19 +378,27 @@ issue_letsencrypt_cert() {
 }
 
 setup_tls_cert() {
-  local reloadcmd="" node_name=""
+  local reloadcmd="" node_name="" token=""
   command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
   DOMAIN="${DOMAIN:-${NODE_TLS_DOMAIN:-}}"
   if [[ -z "$DOMAIN" ]]; then
     [[ -r /dev/tty ]] || die '需要交互终端输入 TLS 证书域名，或使用: deploy-marzban.sh 5 域名'
-    read -r -p $'请输入 TLS 证书域名（需解析到本机）: ' DOMAIN </dev/tty
+    read -r -p $'请输入 TLS 证书域名: ' DOMAIN </dev/tty
   fi
   [[ -n "$DOMAIN" ]] || die 'TLS 证书域名不能为空'
+  token="${CF_Token:-${CF_TOKEN:-}}"
+  if [[ -z "$token" ]]; then
+    [[ -r /dev/tty ]] || die '需要交互终端输入 Cloudflare API Token，或先 export CF_Token'
+    read -r -s -p $'请输入 Cloudflare API Token: ' token </dev/tty
+    printf '\n'
+    [[ -n "$token" ]] || die 'Cloudflare API Token 不能为空'
+  fi
+  export CF_Token="$token"
   log '安装依赖'
   apt-get update
   export DEBIAN_FRONTEND=noninteractive
   export NEEDRESTART_MODE=a
-  apt-get install -y -o Dpkg::Options::=--force-confold curl ca-certificates socat openssl dnsutils
+  apt-get install -y -o Dpkg::Options::=--force-confold curl ca-certificates openssl
   if command -v marzban >/dev/null && [[ -f "$MARZBAN_DIR/.env" ]]; then
     reloadcmd='marzban restart -n'
   elif command -v docker >/dev/null; then
@@ -389,7 +410,8 @@ setup_tls_cert() {
   if [[ -z "$reloadcmd" ]]; then
     warn '未检测到 Marzban 或 Node 容器，仅安装证书文件'
   fi
-  issue_letsencrypt_cert "$DOMAIN" "$reloadcmd"
+  issue_letsencrypt_cert "$DOMAIN" "$reloadcmd" dns_cf
+  unset CF_Token
   log '完成'
   printf '域名: %s\n' "$DOMAIN"
   printf '证书: %s\n' "$CERT_DIR/$DOMAIN.cer"
@@ -523,7 +545,7 @@ prompt_action() {
     printf '  2. 更新 Xray 内核\n'
     printf '  3. 设置 Cloudflare 中转\n'
     printf '  4. 安装 Marzban Node\n'
-    printf '  5. 申请 TLS 证书\n'
+    printf '  5. 申请 TLS 证书（Cloudflare DNS-01）\n'
   } >/dev/tty
   read -r -p $'请输入编号 [1-5]: ' choice </dev/tty
   printf '%s\n' "$choice"
