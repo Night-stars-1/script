@@ -399,16 +399,19 @@ setup_tls_cert() {
   export DEBIAN_FRONTEND=noninteractive
   export NEEDRESTART_MODE=a
   apt-get install -y -o Dpkg::Options::=--force-confold curl ca-certificates openssl
-  if command -v marzban >/dev/null && [[ -f "$MARZBAN_DIR/.env" ]]; then
-    reloadcmd='marzban restart -n'
-  elif command -v docker >/dev/null; then
+  if command -v docker >/dev/null; then
     node_name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk '/marzban-node/{ print; exit }')"
     if [[ -n "$node_name" ]]; then
       reloadcmd="docker restart ${node_name}"
     fi
   fi
+  if [[ -z "$reloadcmd" ]] && command -v marzban >/dev/null && [[ -f "$MARZBAN_DIR/.env" ]]; then
+    reloadcmd='marzban restart -n'
+  fi
   if [[ -z "$reloadcmd" ]]; then
     warn '未检测到 Marzban 或 Node 容器，仅安装证书文件'
+  else
+    log "证书续期将执行: $reloadcmd"
   fi
   issue_letsencrypt_cert "$DOMAIN" "$reloadcmd" dns_cf
   unset CF_Token
