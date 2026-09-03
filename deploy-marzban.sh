@@ -417,11 +417,13 @@ setup_cf_relay() {
 prompt_action() {
   local choice=""
   [[ -r /dev/tty ]] || die '需要交互终端，或使用: deploy-marzban.sh 1|2|3|4'
-  printf '\n请选择操作:\n'
-  printf '  1. 安装 Marzban 主节点（面板）\n'
-  printf '  2. 更新 Xray 内核\n'
-  printf '  3. 设置 Cloudflare 中转证书\n'
-  printf '  4. 安装 Marzban Node\n'
+  {
+    printf '\n请选择操作:\n'
+    printf '  1. 安装 Marzban 主节点（面板）\n'
+    printf '  2. 更新 Xray 内核\n'
+    printf '  3. 设置 Cloudflare 中转证书\n'
+    printf '  4. 安装 Marzban Node\n'
+  } >/dev/tty
   read -r -p $'请输入编号 [1-4]: ' choice </dev/tty
   printf '%s\n' "$choice"
 }
