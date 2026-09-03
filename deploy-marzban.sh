@@ -27,7 +27,7 @@ warn() { printf '\033[1;33m[marzban][WARN]\033[0m %s\n' "$*"; }
 
 usage() {
   cat <<'EOF'
-用法: deploy-marzban.sh [1|2|3|4] ...
+用法: deploy-marzban.sh [1|2|3|4|5] ...
 
   1  安装 Marzban 主节点（面板）
      deploy-marzban.sh 1 [管理员密码] [面板域名]
@@ -45,7 +45,11 @@ usage() {
   4  安装 Marzban Node
      deploy-marzban.sh 4
      deploy-marzban.sh 4 [节点目录名]
-     证书可用 NODE_CLIENT_CERT_FILE 指定 PEM 文件，否则交互粘贴
+     Client Certificate 可用 NODE_CLIENT_CERT_FILE 指定 PEM 文件，否则交互粘贴
+
+  5  申请 TLS 证书（HTTP-01）
+     deploy-marzban.sh 5 [域名]
+     域名需解析到本机，证书安装到 /var/lib/marzban/certs/
 EOF
 }
 
@@ -273,7 +277,7 @@ EOF
 
   log '完成'
   printf '目录: %s\n' "$MARZBAN_NODE_DIR"
-  printf '证书: %s\n' "$cert_file"
+  printf 'Client Certificate: %s\n' "$cert_file"
   if [[ "$use_rest" == true ]]; then
     printf '协议: REST\n'
   else
@@ -294,6 +298,102 @@ ensure_acme() {
     curl -fsSL https://get.acme.sh | sh
   fi
   [[ -x "$ACME_HOME/acme.sh" ]] || die "acme.sh 安装失败: $ACME_HOME/acme.sh"
+}
+
+issue_letsencrypt_cert() {
+  local domain="$1"
+  local reloadcmd="${2:-}"
+  local candidate ACME_CERT_SOURCE="" CERT_EXPIRES
+  local -a ACME_INSTALL_ARGS=()
+  [[ -n "$domain" ]] || die 'TLS 证书域名不能为空'
+  [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || die '域名格式不正确'
+  command -v openssl >/dev/null || die '找不到 openssl'
+  command -v socat >/dev/null || die '找不到 socat，无法用 standalone 签证书'
+
+  log '预检查 DNS'
+  DNS_IP="$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+  DNS_IPV6="$(getent ahostsv6 "$domain" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+  printf 'A 记录: %s\n' "${DNS_IP:-未找到}"
+  printf 'AAAA 记录: %s\n' "${DNS_IPV6:-未找到}"
+  [[ -n "$DNS_IP" ]] || die '没有查到域名 A 记录，请先将域名解析到本机公网 IPv4'
+  ok "A 记录已解析: $DNS_IP"
+
+  log '检查 80 端口'
+  if ss -lntH '( sport = :80 )' | grep -q .; then
+    die 'TCP 80 已被占用。standalone 签证书前请停止占用 80 的服务。'
+  fi
+
+  ensure_acme
+  "$ACME_HOME/acme.sh" --set-default-ca --server letsencrypt
+  for candidate in \
+    "$ACME_HOME/$domain/fullchain.cer" \
+    "$ACME_HOME/${domain}_ecc/fullchain.cer"; do
+    if [[ -s "$candidate" ]] && openssl x509 -in "$candidate" -noout -checkend 2592000 >/dev/null 2>&1; then
+      ACME_CERT_SOURCE="$candidate"
+      [[ "$candidate" == *"_ecc/"* ]] && ACME_INSTALL_ARGS+=(--ecc)
+      break
+    fi
+  done
+
+  if [[ -n "$ACME_CERT_SOURCE" ]]; then
+    CERT_EXPIRES="$(openssl x509 -in "$ACME_CERT_SOURCE" -noout -enddate | cut -d= -f2-)"
+    ok "检测到有效证书，跳过签发，有效期至: $CERT_EXPIRES"
+  else
+    log '未检测到有效期超过 30 天的证书，开始申请或续期'
+    "$ACME_HOME/acme.sh" --issue -d "$domain" --standalone --keylength ec-256
+    ACME_INSTALL_ARGS=(--ecc)
+  fi
+
+  mkdir -p "$CERT_DIR"
+  if [[ -n "$reloadcmd" ]]; then
+    "$ACME_HOME/acme.sh" --install-cert -d "$domain" \
+      "${ACME_INSTALL_ARGS[@]}" \
+      --fullchain-file "$CERT_DIR/$domain.cer" \
+      --key-file "$CERT_DIR/$domain.cer.key" \
+      --reloadcmd "$reloadcmd"
+  else
+    "$ACME_HOME/acme.sh" --install-cert -d "$domain" \
+      "${ACME_INSTALL_ARGS[@]}" \
+      --fullchain-file "$CERT_DIR/$domain.cer" \
+      --key-file "$CERT_DIR/$domain.cer.key"
+  fi
+  chmod 644 "$CERT_DIR/$domain.cer"
+  chmod 600 "$CERT_DIR/$domain.cer.key"
+  [[ -s "$CERT_DIR/$domain.cer" && -s "$CERT_DIR/$domain.cer.key" ]] || die '证书文件安装失败'
+  openssl x509 -in "$CERT_DIR/$domain.cer" -noout -checkend 0 >/dev/null || die '证书无效或已过期'
+  ok "TLS 证书已安装: $CERT_DIR/$domain.cer"
+}
+
+setup_tls_cert() {
+  local reloadcmd="" node_name=""
+  command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
+  DOMAIN="${DOMAIN:-${NODE_TLS_DOMAIN:-}}"
+  if [[ -z "$DOMAIN" ]]; then
+    [[ -r /dev/tty ]] || die '需要交互终端输入 TLS 证书域名，或使用: deploy-marzban.sh 5 域名'
+    read -r -p $'请输入 TLS 证书域名（需解析到本机）: ' DOMAIN </dev/tty
+  fi
+  [[ -n "$DOMAIN" ]] || die 'TLS 证书域名不能为空'
+  log '安装依赖'
+  apt-get update
+  export DEBIAN_FRONTEND=noninteractive
+  export NEEDRESTART_MODE=a
+  apt-get install -y -o Dpkg::Options::=--force-confold curl ca-certificates socat openssl dnsutils
+  if command -v marzban >/dev/null && [[ -f "$MARZBAN_DIR/.env" ]]; then
+    reloadcmd='marzban restart -n'
+  elif command -v docker >/dev/null; then
+    node_name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk '/marzban-node/{ print; exit }')"
+    if [[ -n "$node_name" ]]; then
+      reloadcmd="docker restart ${node_name}"
+    fi
+  fi
+  if [[ -z "$reloadcmd" ]]; then
+    warn '未检测到 Marzban 或 Node 容器，仅安装证书文件'
+  fi
+  issue_letsencrypt_cert "$DOMAIN" "$reloadcmd"
+  log '完成'
+  printf '域名: %s\n' "$DOMAIN"
+  printf '证书: %s\n' "$CERT_DIR/$DOMAIN.cer"
+  printf '私钥: %s\n' "$CERT_DIR/$DOMAIN.cer.key"
 }
 
 cert_sha256_fingerprint() {
@@ -416,15 +516,16 @@ setup_cf_relay() {
 
 prompt_action() {
   local choice=""
-  [[ -r /dev/tty ]] || die '需要交互终端，或使用: deploy-marzban.sh 1|2|3|4'
+  [[ -r /dev/tty ]] || die '需要交互终端，或使用: deploy-marzban.sh 1|2|3|4|5'
   {
     printf '\n请选择操作:\n'
     printf '  1. 安装 Marzban 主节点（面板）\n'
     printf '  2. 更新 Xray 内核\n'
     printf '  3. 设置 Cloudflare 中转\n'
     printf '  4. 安装 Marzban Node\n'
+    printf '  5. 申请 TLS 证书\n'
   } >/dev/tty
-  read -r -p $'请输入编号 [1-4]: ' choice </dev/tty
+  read -r -p $'请输入编号 [1-5]: ' choice </dev/tty
   printf '%s\n' "$choice"
 }
 
@@ -490,48 +591,8 @@ install_marzban() {
   docker ps --format '{{.Names}}' | grep -q . || die 'Docker 已安装但没有运行中的容器'
   ok 'Docker 容器正在运行'
 
-  log '检查 80 端口'
-  if ss -lntH '( sport = :80 )' | grep -q .; then
-    die 'TCP 80 已被占用。standalone 签证书前请停止占用 80 的服务。'
-  fi
-
-  log '安装 acme.sh 并申请证书'
-  if [[ ! -x "$ACME_HOME/acme.sh" ]]; then
-    curl -fsSL https://get.acme.sh | sh
-  fi
-  "$ACME_HOME/acme.sh" --set-default-ca --server letsencrypt
-  ACME_CERT_SOURCE=""
-  ACME_INSTALL_ARGS=()
-  for candidate in \
-    "$ACME_HOME/$DOMAIN/fullchain.cer" \
-    "$ACME_HOME/${DOMAIN}_ecc/fullchain.cer"; do
-    if [[ -s "$candidate" ]] && openssl x509 -in "$candidate" -noout -checkend 2592000 >/dev/null 2>&1; then
-      ACME_CERT_SOURCE="$candidate"
-      [[ "$candidate" == *"_ecc/"* ]] && ACME_INSTALL_ARGS+=(--ecc)
-      break
-    fi
-  done
-
-  if [[ -n "$ACME_CERT_SOURCE" ]]; then
-    CERT_EXPIRES="$(openssl x509 -in "$ACME_CERT_SOURCE" -noout -enddate | cut -d= -f2-)"
-    ok "检测到有效证书，跳过签发，有效期至: $CERT_EXPIRES"
-  else
-    log '未检测到有效期超过 30 天的证书，开始申请或续期'
-    "$ACME_HOME/acme.sh" --issue -d "$DOMAIN" --standalone --keylength ec-256
-    ACME_INSTALL_ARGS=(--ecc)
-  fi
-
-  mkdir -p "$CERT_DIR"
-  "$ACME_HOME/acme.sh" --install-cert -d "$DOMAIN" \
-    "${ACME_INSTALL_ARGS[@]}" \
-    --fullchain-file "$CERT_DIR/$DOMAIN.cer" \
-    --key-file "$CERT_DIR/$DOMAIN.cer.key" \
-    --reloadcmd 'marzban restart -n'
-  chmod 644 "$CERT_DIR/$DOMAIN.cer"
-  chmod 600 "$CERT_DIR/$DOMAIN.cer.key"
-  [[ -s "$CERT_DIR/$DOMAIN.cer" && -s "$CERT_DIR/$DOMAIN.cer.key" ]] || die '证书文件安装失败'
-  openssl x509 -in "$CERT_DIR/$DOMAIN.cer" -noout -checkend 0 >/dev/null || die '证书无效或已过期'
-  ok "证书已安装: $CERT_DIR"
+  log '申请 TLS 证书'
+  issue_letsencrypt_cert "$DOMAIN" 'marzban restart -n'
 
   log '写入 Marzban HTTPS 配置'
   [[ -f "$MARZBAN_DIR/.env" ]] || die "$MARZBAN_DIR/.env 不存在"
@@ -627,6 +688,10 @@ main() {
     4|node)
       action=node
       ;;
+    5|tls|cert)
+      DOMAIN="${2:-}"
+      action=tls
+      ;;
     '')
       action="$(prompt_action)"
       ;;
@@ -636,7 +701,7 @@ main() {
         DOMAIN="$2"
         action=install
       else
-        die "未知选项: $1（输入 1 安装主节点，2 更新内核，3 设置 CF 中转，4 安装 Node）"
+        die "未知选项: $1（输入 1 安装主节点，2 更新内核，3 设置 CF 中转，4 安装 Node，5 申请 TLS 证书）"
       fi
       ;;
   esac
@@ -645,7 +710,8 @@ main() {
     2|update|core) update_xray_core ;;
     3|cf|cloudflare) setup_cf_relay ;;
     4|node) install_marzban_node "${2:-marzban-node}" ;;
-    *) die '无效选择，请输入 1、2、3 或 4' ;;
+    5|tls|cert) setup_tls_cert ;;
+    *) die '无效选择，请输入 1、2、3、4 或 5' ;;
   esac
 }
 
