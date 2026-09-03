@@ -38,7 +38,7 @@ usage() {
      deploy-marzban.sh 2 main [版本]
      deploy-marzban.sh 2 node [版本]
 
-  3  Cloudflare 中转证书（DNS-01）
+  3  设置 Cloudflare 中转
      deploy-marzban.sh 3 [域名]
      需提供 Cloudflare API Token（环境变量 CF_Token 或交互输入）
 
@@ -421,7 +421,7 @@ prompt_action() {
     printf '\n请选择操作:\n'
     printf '  1. 安装 Marzban 主节点（面板）\n'
     printf '  2. 更新 Xray 内核\n'
-    printf '  3. 设置 Cloudflare 中转证书\n'
+    printf '  3. 设置 Cloudflare 中转\n'
     printf '  4. 安装 Marzban Node\n'
   } >/dev/tty
   read -r -p $'请输入编号 [1-4]: ' choice </dev/tty
@@ -636,7 +636,7 @@ main() {
         DOMAIN="$2"
         action=install
       else
-        die "未知选项: $1（输入 1 安装主节点，2 更新内核，3 设置 CF 中转证书，4 安装 Node）"
+        die "未知选项: $1（输入 1 安装主节点，2 更新内核，3 设置 CF 中转，4 安装 Node）"
       fi
       ;;
   esac
