@@ -32,6 +32,7 @@ usage() {
   1  安装 Marzban 主节点（面板）
      deploy-marzban.sh 1 [管理员密码] [面板域名]
      deploy-marzban.sh [管理员密码] [面板域名]
+     证书默认 HTTP-01；export CF_Token 或交互选择 Cloudflare DNS-01
 
   2  更新 Xray 内核
      deploy-marzban.sh 2
@@ -302,6 +303,40 @@ ensure_acme() {
   [[ -x "$ACME_HOME/acme.sh" ]] || die "acme.sh 安装失败: $ACME_HOME/acme.sh"
 }
 
+prompt_cf_token() {
+  local token="${CF_Token:-${CF_TOKEN:-}}"
+  if [[ -z "$token" ]]; then
+    [[ -r /dev/tty ]] || die '需要交互终端输入 Cloudflare API Token，或先 export CF_Token'
+    read -r -s -p $'请输入 Cloudflare API Token: ' token </dev/tty
+    printf '\n'
+  fi
+  [[ -n "$token" ]] || die 'Cloudflare API Token 不能为空'
+  export CF_Token="$token"
+}
+
+choose_acme_mode() {
+  local choice=""
+  if [[ -n "${CF_Token:-${CF_TOKEN:-}}" ]]; then
+    printf '%s\n' dns_cf
+    return 0
+  fi
+  if [[ ! -r /dev/tty ]]; then
+    printf '%s\n' standalone
+    return 0
+  fi
+  {
+    printf '\n选择证书签发方式:\n'
+    printf '  1. HTTP-01（域名必须解析到本机，占用 80 端口）\n'
+    printf '  2. Cloudflare DNS-01（不要求 A 记录指向本机，可开橙云）\n'
+  } >/dev/tty
+  read -r -p $'请输入编号 [1-2]: ' choice </dev/tty
+  case "$choice" in
+    2|dns|cf|CF) printf '%s\n' dns_cf ;;
+    ''|1|http|standalone) printf '%s\n' standalone ;;
+    *) die '无效选择，请输入 1 或 2' ;;
+  esac
+}
+
 issue_letsencrypt_cert() {
   local domain="$1"
   local reloadcmd="${2:-}"
@@ -379,7 +414,7 @@ issue_letsencrypt_cert() {
 }
 
 setup_tls_cert() {
-  local reloadcmd="" token=""
+  local reloadcmd=""
   command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
   DOMAIN="${DOMAIN:-${NODE_TLS_DOMAIN:-}}"
   if [[ -z "$DOMAIN" ]]; then
@@ -387,14 +422,7 @@ setup_tls_cert() {
     read -r -p $'请输入 TLS 证书域名: ' DOMAIN </dev/tty
   fi
   [[ -n "$DOMAIN" ]] || die 'TLS 证书域名不能为空'
-  token="${CF_Token:-${CF_TOKEN:-}}"
-  if [[ -z "$token" ]]; then
-    [[ -r /dev/tty ]] || die '需要交互终端输入 Cloudflare API Token，或先 export CF_Token'
-    read -r -s -p $'请输入 Cloudflare API Token: ' token </dev/tty
-    printf '\n'
-    [[ -n "$token" ]] || die 'Cloudflare API Token 不能为空'
-  fi
-  export CF_Token="$token"
+  prompt_cf_token
   log '安装依赖'
   apt-get update
   export DEBIAN_FRONTEND=noninteractive
@@ -567,13 +595,19 @@ install_marzban() {
   [[ -n "$DOMAIN" ]] || die '域名不能为空'
   [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die '域名格式不正确'
   command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
-  log '预检查 DNS'
-  DNS_IP="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-  DNS_IPV6="$(getent ahostsv6 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-  printf 'A 记录: %s\n' "${DNS_IP:-未找到}"
-  printf 'AAAA 记录: %s\n' "${DNS_IPV6:-未找到}"
-  [[ -n "$DNS_IP" ]] || die '没有查到域名 A 记录，请先将域名解析到 VPS 公网 IPv4'
-  ok "A 记录已解析: $DNS_IP"
+  ACME_MODE="$(choose_acme_mode)"
+  if [[ "$ACME_MODE" == dns_cf ]]; then
+    prompt_cf_token
+    log '使用 Cloudflare DNS-01 签发面板证书'
+  else
+    log '预检查 DNS'
+    DNS_IP="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+    DNS_IPV6="$(getent ahostsv6 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
+    printf 'A 记录: %s\n' "${DNS_IP:-未找到}"
+    printf 'AAAA 记录: %s\n' "${DNS_IPV6:-未找到}"
+    [[ -n "$DNS_IP" ]] || die '没有查到域名 A 记录，请先将域名解析到 VPS 公网 IPv4'
+    ok "A 记录已解析: $DNS_IP"
+  fi
 
   log '准备 Swap'
   if ! swapon --show=NAME --noheadings | grep -qx '/swapfile'; then
@@ -617,7 +651,8 @@ install_marzban() {
   ok 'Docker 容器正在运行'
 
   log '申请 TLS 证书'
-  issue_letsencrypt_cert "$DOMAIN" 'marzban restart -n'
+  issue_letsencrypt_cert "$DOMAIN" 'marzban restart -n' "$ACME_MODE"
+  unset CF_Token
 
   log '写入 Marzban HTTPS 配置'
   [[ -f "$MARZBAN_DIR/.env" ]] || die "$MARZBAN_DIR/.env 不存在"
