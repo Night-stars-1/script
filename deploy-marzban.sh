@@ -51,6 +51,7 @@ usage() {
      deploy-marzban.sh 5 [域名]
      证书安装到 /var/lib/marzban/certs/
      不要求域名 A 记录指向本机；需 CF_Token（环境变量或交互输入）
+     重启命令可用 TLS_RELOADCMD 覆盖，例如: TLS_RELOADCMD='docker restart marzban-node'
 EOF
 }
 
@@ -378,7 +379,7 @@ issue_letsencrypt_cert() {
 }
 
 setup_tls_cert() {
-  local reloadcmd="" node_name="" token=""
+  local reloadcmd="" token=""
   command -v apt-get >/dev/null || die '此脚本仅支持 Debian/Ubuntu 系统'
   DOMAIN="${DOMAIN:-${NODE_TLS_DOMAIN:-}}"
   if [[ -z "$DOMAIN" ]]; then
@@ -399,14 +400,13 @@ setup_tls_cert() {
   export DEBIAN_FRONTEND=noninteractive
   export NEEDRESTART_MODE=a
   apt-get install -y -o Dpkg::Options::=--force-confold curl ca-certificates openssl
-  if command -v docker >/dev/null; then
-    node_name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk '/marzban-node/{ print; exit }')"
-    if [[ -n "$node_name" ]]; then
-      reloadcmd="docker restart ${node_name}"
-    fi
-  fi
-  if [[ -z "$reloadcmd" ]] && command -v marzban >/dev/null && [[ -f "$MARZBAN_DIR/.env" ]]; then
+  if command -v docker >/dev/null && docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'marzban-node'; then
+    reloadcmd='marzban-node restart'
+  elif [[ -f "$MARZBAN_DIR/.env" ]]; then
     reloadcmd='marzban restart -n'
+  fi
+  if [[ -n "${TLS_RELOADCMD:-}" ]]; then
+    reloadcmd="$TLS_RELOADCMD"
   fi
   if [[ -z "$reloadcmd" ]]; then
     warn '未检测到 Marzban 或 Node 容器，仅安装证书文件'
